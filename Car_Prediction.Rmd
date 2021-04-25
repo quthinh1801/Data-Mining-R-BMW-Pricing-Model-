@@ -1,0 +1,289 @@
+---
+title: "Car Price Prediction"
+author: "Jiachen_Liu and Thinh_Nguyen"
+date: "4/15/2021"
+output: 
+  html_document: 
+    fig_width: 10
+    fig_height: 9
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(dplyr)
+```
+## EDA 
+```{r}
+car = read.csv('raw_data.csv')
+```
+
+```{r}
+head(car)
+```
+
+
+```{r}
+## choose subset of bmw data
+bmw = car[which( car$brand == 'bmw' ),]
+bmw = subset(bmw,select = -1 )
+head(bmw)
+```
+
+
+```{r}
+## summary of bmw data 
+summary(bmw)
+```
+```{r}
+## check missing value for each column
+library(mice)
+library(VIM)
+md.pattern(bmw)
+aggr(bmw, prop=FALSE, numbers=TRUE)
+```
+```{r}
+colnames(bmw)
+```
+## Exploary Data Analysis 
+
+```{r}
+# box plot for the bmw year
+ggplot(data = bmw, aes( x = year, y = price, group =year ) ) + geom_boxplot(color = "blue",alpha = 0.1 ) + ggtitle("Box plot of bmw year")+ theme_minimal()
+```
+
+```{r}
+# box plot of bmw  price
+ggplot(data = bmw, aes(x = transmission, y = price )) + geom_boxplot( aes(color = transmission), alpha = 0.1) + ggtitle("Box plot of bmw price")+ theme_minimal()
+```
+
+
+```{r}
+# boxplot for car model
+ggplot(data = bmw, aes( y = price, x = model, group = model ) ) + geom_boxplot( aes(color = model), alpha =0.8 ) + ggtitle("Box plot of car mileage in different model")
+
+```
+
+
+```{r}
+# scatter plot of millage and price
+
+ggplot(data = bmw, aes(x = mileage , y = price)) + geom_point(color ="red", alpha= 0.05) + ggtitle("The relationship between millage and price in different transmission")+ facet_wrap(~ transmission)
+
+```
+
+
+```{r}
+#scatter plot for car mpg and price
+ggplot(data = bmw, aes(x = engineSize , y = price , group = engineSize)) + geom_boxplot(color ="blue", alpha= 0.05) + ggtitle("The relationship between engine size and price")
+```
+
+
+```{r}
+ggplot(data = bmw[which(bmw$year>2014),], aes(x = mileage , y = price)) + geom_point(color ="red", alpha= 0.05) + ggtitle("The relationship between millage and price in different transmission")+ facet_wrap(~ year  )
+
+```
+
+```{r}
+# bar plot of "Total Number of each transmission"
+ggplot( data = bmw , aes(x = transmission ), color = "red" ) + geom_bar(aes(color = transmission)) + ggtitle( "Total Number of each transmission")+ theme_minimal()
+
+```
+
+
+
+
+
+## Feature Engineering
+
+### encoding categrical data
+```{r}
+# Feature Engineering 
+library(caret)
+library(psych)
+library(fastDummies)
+```
+
+```{r}
+bmw_data  = dummy_cols(bmw, select_columns =c('year','model','transmission','fuelType','engineSize' ) )
+head(bmw_data)
+```
+
+```{r}
+bmw_df = subset(bmw_data ,select =c(-year,-model, -transmission, - fuelType, -brand , -engineSize) )
+head(bmw_df)
+```
+
+
+### Normalize data and prepare for PCA
+```{r}
+bmw_scale = as.data.frame(scale(bmw_df[  , -2]))
+head(bmw_scale)
+```
+
+### Apply PCA on scale data set and choose apporiate number of components
+```{r}
+fa.parallel(bmw_scale,fa = "pc",n.iter = 100,show.legend = TRUE )
+
+```
+
+### Choose components number is 31 and create pca data frame for modeling part
+```{r}
+# From the result from above , we choose components number = 31 
+pc = principal(bmw_scale, nfactors = 31 , rotate = "none", scores = TRUE )
+```
+```{r}
+pca_df = cbind(bmw_df$price , as.data.frame(pc$scores))%>%
+rename(price = "bmw_df$price")
+head(pca_df)
+```
+
+### Split dataset as train and test data set
+```{r}
+# split train and test data , which 80% train data and 20% test data
+library(caTools)
+pca_split_data = sample.split(pca_df,SplitRatio = 0.8)
+pca_train_data = subset(pca_df,pca_split_data==TRUE)
+pca_test_data = subset( pca_df,pca_split_data ==FALSE)
+
+```
+
+
+## implementing model 
+
+### linear regression with PCA
+```{r}
+## linear regression 
+linear = lm(price ~. , data = pca_train_data)
+summary(linear)
+plot(linear)
+```
+
+
+### Lasso Regression with PCA
+```{r}
+## Lasso Regression
+lasso_pca <- train(price ~ . ,
+                data = pca_train_data, 
+                method = "lasso")
+lasso_pca
+plot(lasso_pca)
+```
+
+
+
+
+### Ridge Regression with PCA
+```{r}
+## ridge regression
+ridge_pca <- train(price ~ . ,
+                data = pca_train_data, 
+                method = "ridge")
+ridge_pca
+plot(ridge_pca)
+```
+
+
+### Elasticnet with PCA
+```{r}
+## Elasticnet
+enet_pca <- train(price ~ . ,
+                data = pca_train_data, 
+                method = "enet")
+enet_pca
+plot(enet_pca)
+```
+
+
+
+### KNN regression with PCA
+```{r}
+## KNN regression
+knn_pca <- train(price ~ . ,
+                data = pca_train_data, 
+                method = "knn")
+knn_pca
+plot(knn_pca)
+```
+
+
+### XGBoost with PCA
+```{r}
+## xgboost
+xgboost_pca<- train(price ~ . ,
+                data = pca_train_data, 
+                method = "xgbTree")
+xgboost_pca
+plot(xgboost_pca)
+```
+
+
+## Model Evaluation
+### Linear Regression on test set
+```{r}
+## RMSE, R2 and MAE in test data set of Linear Regression 
+linear_pca_pred <- predict(linear, pca_test_data)
+as.table(postResample(pred = linear_pca_pred, obs = pca_test_data$price))
+ggplot() + geom_point(aes(x = pca_test_data$price , y = linear_pca_pred), color = "red" ,alpha =0.2) + xlab("True_Price") + ylab("Pred_Price") + ggtitle("The scatter plot of true price and predict price(Linear Regression)")+geom_abline (slope= 1, color = "blue")
+```
+
+
+### Lasso Regression on test set
+```{r}
+## RMSE, R2 and MAE in test data set of Linear Regression
+lasso_pca_pred <- predict(lasso_pca, pca_test_data)
+as.table(postResample(pred = lasso_pca_pred, obs = pca_test_data$price))
+ggplot() + geom_point(aes(x = pca_test_data$price , y = lasso_pca_pred), color = "red" ,alpha =0.2) + xlab("True_Price") + ylab("Pred_Price") + ggtitle("The scatter plot of true price and predict price(Lasso Regression)")+geom_abline (slope= 1, color = "blue")
+
+```
+
+### Ridge Regression on test set
+```{r}
+## RMSE, R2 and MAE in test data set of Ridge Regression
+ridge_pca_pred <- predict(ridge_pca, pca_test_data)
+as.table(postResample(pred = ridge_pca_pred, obs = pca_test_data$price))
+ggplot() + geom_point(aes(x = pca_test_data$price , y = ridge_pca_pred), color = "red" ,alpha =0.2) + xlab("True_Price") + ylab("Pred_Price") + ggtitle("The scatter plot of true price and predict price(Ridge Regression)")+geom_abline (slope= 1, color = "blue")
+```
+
+### Elasticnet on test set 
+```{r}
+## RMSE, R2 and MAE in test data set of Elastic net
+enet_pca_pred <- predict(enet_pca, pca_test_data)
+as.table(postResample(pred = enet_pca_pred, obs = pca_test_data$price))
+ggplot() + geom_point(aes(x = pca_test_data$price , y = enet_pca_pred), color = "red" ,alpha =0.2) + xlab("True_Price") + ylab("Pred_Price") + ggtitle("The scatter plot of true price and predict price(Elastic net Regression)")+geom_abline (slope= 1, color = "blue")
+
+```
+
+### KNN Regression on test set 
+```{r}
+## RMSE, R2 and MAE in test data set 
+knn_pca_pred <- predict(knn_pca, pca_test_data)
+as.table(postResample(pred = knn_pca_pred, obs = pca_test_data$price))
+ggplot() + geom_point(aes(x = pca_test_data$price , y = knn_pca_pred), color = "red" ,alpha =0.2) + xlab("True_Price") + ylab("Pred_Price") + ggtitle("The scatter plot of true price and predict price(KNN Regression)")+geom_abline (slope= 1, color = "blue")
+```
+
+### XGboost on test set 
+```{r}
+## xgboost evaluation 
+xgboost_pca_pred <- predict(xgboost_pca, pca_test_data)
+as.table(postResample(pred = xgboost_pca_pred, obs = pca_test_data$price))
+ggplot() + geom_point(aes(x = pca_test_data$price , y = xgboost_pca_pred), color = "red" ,alpha =0.2) + xlab("True_Price") + ylab("Pred_Price") + ggtitle("The scatter plot of true price and predict price(XGBoost)")+geom_abline (slope= 1, color = "Blue")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
